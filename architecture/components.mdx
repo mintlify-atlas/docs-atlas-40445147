@@ -1,0 +1,312 @@
+---
+title: 'Components'
+description: 'Reference for every React component in GeoQuest — what each does and what props it accepts.'
+---
+
+All components live in the `components/` directory. Each file exports a single
+default component. Components that use React hooks or handle browser events are
+marked `"use client"` at the top of the file.
+
+## GameBoard
+
+**File:** `components/GameBoard.jsx` — Client Component (`"use client"`)
+
+`GameBoard` is the top-level game component. It calls `useGame()` to get all
+game state and callbacks, then decides what to render based on the current
+`gameStatus`.
+
+It has no props — all state comes from the hook.
+
+### Rendering logic
+
+| `gameStatus` | What renders |
+|---|---|
+| `"loading"` | `<LoadingSpinner>` + optional `<ErrorMessage>` if an error occurred during fetch |
+| `"playing"` | Stats bar, `<ChatBox>`, optional `<ErrorMessage>`, `<QuestionInput>` + `<GuessInput>` |
+| `"won"` or `"lost"` | Stats bar, `GameOverBanner`, `<ChatBox>`, `<CountryCard>` with the secret country, restart button |
+
+The input area (`QuestionInput` + `GuessInput`) is hidden entirely when the
+game is over (`isGameOver = true`). Both inputs receive `disabled={true}` while
+the AI is generating a response (`isAiThinking = true`).
+
+A progress bar fills left-to-right as questions are used. It turns red when
+5 or fewer questions remain (`questionsRemaining <= 5`).
+
+### Usage
+
+```jsx
+// app/game/page.jsx
+import GameBoard from '@/components/GameBoard';
+
+export default function GamePage() {
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      <GameBoard />
+    </div>
+  );
+}
+```
+
+### Internal subcomponent: GameOverBanner
+
+`GameOverBanner` is a private component defined in the same file. It is not
+exported. It renders a win or loss message at the top of the board.
+
+| Prop | Type | Description |
+|---|---|---|
+| `type` | `"won" \| "lost"` | Controls color scheme and message text. |
+| `questionsUsed` | `number` | Shown in the win message ("You got it in N questions!"). Only used when `type="won"`. |
+| `onRestart` | `() => void` | Not used by the banner directly — passed through from `GameBoard`. |
+
+---
+
+## ChatBox
+
+**File:** `components/ChatBox.jsx` — Client Component (`"use client"`)
+
+Renders the scrollable chat history between the player and the AI. Messages are
+stacked vertically; user messages appear on the right, AI messages on the left.
+
+When `isAiThinking` is `true`, a three-dot animated typing indicator appears
+below the last message.
+
+The component uses `useRef` to hold a reference to an invisible `<div>` at the
+bottom of the list. A `useEffect` calls `scrollIntoView({ behavior: "smooth" })`
+every time `messages` or `isAiThinking` changes, keeping the latest message
+visible without user interaction.
+
+### Props
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `messages` | `Array<{ role: "user" \| "ai", text: string }>` | Yes | The full chat history to display. |
+| `isAiThinking` | `boolean` | Yes | When `true`, shows the animated typing indicator after the last message. |
+
+### Message formatting
+
+The internal `formatMessage` helper parses `**bold**` markdown syntax and
+converts it to `<strong>` tags. This is a minimal inline parser — no external
+markdown library is used.
+
+### Usage
+
+```jsx
+<ChatBox
+  messages={messages}
+  isAiThinking={isAiThinking}
+/>
+```
+
+---
+
+## QuestionInput
+
+**File:** `components/QuestionInput.jsx` — Client Component (`"use client"`)
+
+A labeled text input for asking yes/no questions. Maintains its own local
+`inputValue` state and clears itself after a successful submission.
+
+The counter badge turns red when `questionsRemaining <= 5`.
+
+### Props
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `onSubmit` | `(question: string) => void` | Yes | Called with the trimmed question text when the form is submitted. |
+| `disabled` | `boolean` | Yes | Disables both the input and the submit button. Set to `true` while the AI is thinking or when the game is over. |
+| `questionsRemaining` | `number` | Yes | Displayed in a badge next to the label. |
+
+### Usage
+
+```jsx
+<QuestionInput
+  onSubmit={askQuestion}
+  disabled={isAiThinking}
+  questionsRemaining={questionsRemaining}
+/>
+```
+
+---
+
+## GuessInput
+
+**File:** `components/GuessInput.jsx` — Client Component (`"use client"`)
+
+A visually distinct text input (green color scheme) for submitting a final
+country guess. Maintains its own local `guessValue` state and clears itself
+after submission.
+
+A guess counts as one of the player's 20 questions. The hint text below the
+input makes this clear to the player.
+
+### Props
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `onSubmit` | `(guess: string) => void` | Yes | Called with the trimmed guess string when the form is submitted. |
+| `disabled` | `boolean` | Yes | Disables both the input and the "Guess!" button. Set to `true` while the AI is thinking or when the game is over. |
+
+### Usage
+
+```jsx
+<GuessInput
+  onSubmit={submitGuess}
+  disabled={isAiThinking}
+/>
+```
+
+---
+
+## CountryCard
+
+**File:** `components/CountryCard.jsx` — Server-compatible (no `"use client"`)
+
+Displays the full details of the secret country after the game ends. Shown for
+both win and loss outcomes.
+
+All fields are extracted safely with optional chaining and fallback values
+(`"N/A"`) in case of missing data from the REST Countries API.
+
+### Props
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `country` | `object` | Yes | A country object from the REST Countries API (`/v3.1/all`). Returns `null` if the prop itself is `null` or `undefined`. |
+
+### Displayed fields
+
+| Field | Source path | Notes |
+|---|---|---|
+| Flag image | `country.flags.png` (falls back to `.svg`) | Rendered as a full-width banner at the top of the card. |
+| Country name | `country.name.common` | Displayed as an `<h3>`. |
+| Capital | `country.capital[0]` | First capital in the array. |
+| Region | `country.region` | e.g., `"Europe"`, `"Asia"`. |
+| Subregion | `country.subregion` | e.g., `"Western Europe"`. |
+| Currency | `country.currencies` | Formatted via `getCurrencyDisplay()` from `utils/countryUtils.js` — outputs `"Euro (EUR)"` style strings (currency name + code). |
+| Coordinates | `country.latlng[0]`, `country.latlng[1]` | Rounded to 2 decimal places, displayed as `"48.85°, 2.35°"`. |
+
+### Usage
+
+```jsx
+// Shown after game ends
+{isGameOver && secretCountry && (
+  <CountryCard country={secretCountry} />
+)}
+```
+
+---
+
+## Header
+
+**File:** `components/Header.jsx` — Client Component (`"use client"`)
+
+The shared top navigation bar. Renders on every page via `app/layout.jsx`.
+
+It uses `usePathname()` from `next/navigation` to detect the current route and
+highlight the active navigation link with an underline. This hook requires the
+browser runtime, which is why the component is a Client Component.
+
+### Navigation links
+
+| Label | `href` | Active when |
+|---|---|---|
+| Home | `/` | `pathname === "/"` |
+| Play Game | `/game` | `pathname === "/game"` |
+
+The GeoQuest logo/wordmark in the top-left is also a `<Link href="/">` for
+client-side navigation without a full page reload.
+
+### Props
+
+None. The component reads the current path from the router directly.
+
+---
+
+## Footer
+
+**File:** `components/Footer.jsx` — Server-compatible (no `"use client"`)
+
+The shared bottom bar. Renders on every page via `app/layout.jsx`.
+
+Displays the GeoQuest wordmark on the left and a copyright line on the right.
+The current year is computed at render time with `new Date().getFullYear()`.
+
+### Props
+
+None.
+
+### Content
+
+- Left: GeoQuest logo + tagline — `"Guess the Country in 20 Questions"`
+- Right: `© {year} — Proyecto Universitario · React + Next.js`
+
+---
+
+## LoadingSpinner
+
+**File:** `components/LoadingSpinner.jsx` — Server-compatible (no `"use client"`)
+
+A simple animated spinner used while the app fetches the country list on first
+load. Optionally displays a text message below the spinner.
+
+### Props
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `size` | `"sm" \| "md" \| "lg"` | `"md"` | Controls the spinner diameter and border width. |
+| `message` | `string` | `undefined` | Optional text rendered below the spinner with a pulse animation. |
+
+### Size reference
+
+| Value | Diameter | Border |
+|---|---|---|
+| `"sm"` | 20px (`w-5 h-5`) | 2px |
+| `"md"` | 40px (`w-10 h-10`) | 4px |
+| `"lg"` | 64px (`w-16 h-16`) | 4px |
+
+### Usage
+
+```jsx
+// During initial load in GameBoard
+<LoadingSpinner size="lg" message="Loading countries from the API..." />
+
+// Small inline spinner
+<LoadingSpinner size="sm" />
+```
+
+---
+
+## ErrorMessage
+
+**File:** `components/ErrorMessage.jsx` — Server-compatible (no `"use client"`)
+
+Displays an error message in a styled red alert box. Returns `null` if `message`
+is falsy, so it is safe to render unconditionally.
+
+### Props
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `message` | `string` | Yes | The error text to display. The component renders nothing if this is empty or falsy. |
+| `onRetry` | `() => void` | No | When provided, a "Try Again" underlined button is rendered below the message text. |
+
+### Usage
+
+```jsx
+// With retry — used during loading failure
+<ErrorMessage
+  message={error}
+  onRetry={() => window.location.reload()}
+/>
+
+// Without retry — used for mid-game API errors
+<ErrorMessage message={error} />
+```
+
+<Note>
+  `GameBoard` uses `ErrorMessage` in two different ways: with `onRetry` when
+  the initial country fetch fails (so the player can reload the page), and
+  without `onRetry` for errors that occur during gameplay (like a failed
+  `/api/ask` call), where the player can simply try submitting their question
+  again.
+</Note>

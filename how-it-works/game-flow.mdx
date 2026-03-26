@@ -1,0 +1,102 @@
+---
+title: "Game flow"
+description: "Follow the complete game loop from country selection through win or loss."
+---
+
+GeoQuest runs a single continuous game loop managed entirely by the `useGame()` hook. The hook owns all state and exposes clean functions to the UI — `GameBoard` just renders what the hook tells it.
+
+## State machine
+
+Every game moves through a fixed set of statuses:
+
+```
+"loading" → "playing" → "won"
+                      ↘ "lost"
+```
+
+| Status | Meaning |
+|---|---|
+| `"loading"` | Countries are being fetched from the REST Countries API |
+| `"playing"` | A secret country is set; the player is asking questions or guessing |
+| `"won"` | The player identified the country correctly |
+| `"lost"` | The player used all 20 questions without a correct guess |
+
+## Game lifecycle
+
+<Steps>
+  <Step title="App loads">
+    A `useEffect` inside `useGame.js` fires once on mount. It fetches every country from the REST Countries API:
+
+    ```
+    https://restcountries.com/v3.1/all?fields=name,capital,currencies,flags,latlng,region,subregion
+    ```
+
+    After the fetch succeeds, `getRandomCountry()` picks the secret country from the full list and `startNewGame()` is called with it. `gameStatus` transitions from `"loading"` to `"playing"`.
+  </Step>
+
+  <Step title="Player asks a question">
+    The player types a question and the UI calls `askQuestion(questionText)`. The hook:
+
+    1. Appends a `{ role: "user", text: questionText }` entry to `messages`
+    2. Increments `questionsUsed` by 1
+    3. Sets `isAiThinking: true` to disable inputs and show a thinking indicator
+    4. POSTs to `/api/ask` with `{ question, country, history }`
+  </Step>
+
+  <Step title="AI answers">
+    The Next.js API route at `/api/ask` receives the request server-side and calls `askAI()` from `services/aiService.js`. The AI generates a response using the secret country facts embedded in its system prompt.
+
+    The answer is returned as `{ answer: string }` and appended to `messages` with `role: "ai"`. `isAiThinking` is reset to `false`.
+
+    If `questionsUsed` has reached `MAX_QUESTIONS` (20), `gameStatus` immediately becomes `"lost"`.
+  </Step>
+
+  <Step title="Player guesses">
+    At any point the player can submit a direct country guess. The UI calls `submitGuess(guessText)`, which:
+
+    1. Appends the guess to `messages` as `"🔍 My guess: {guessText}"`
+    2. Increments `questionsUsed`
+    3. Calls `checkGuess()` from `utils/countryUtils.js`, which normalizes both strings to lowercase and compares against `country.name.common` and `country.name.official`
+
+    A wrong guess counts as a used question and receives a feedback message from the hook directly (no AI call is made for guesses).
+  </Step>
+
+  <Step title="Game ends">
+    `gameStatus` becomes `"won"` on a correct guess, or `"lost"` when a wrong guess or an AI reply exhausts all 20 questions.
+
+    `GameBoard` detects `isGameOver` (`won` or `lost`) and:
+    - Hides the question and guess inputs
+    - Shows the `GameOverBanner` component
+    - Renders the `CountryCard` with the full country reveal
+  </Step>
+
+  <Step title="Restart">
+    The player clicks **Play Again**. The UI calls `restartGame()`, which internally calls `startNewGame()` with no argument. The hook picks a new random country from the already-loaded `allCountries` array — no additional network request is made.
+
+    All state is reset: `messages`, `questionsUsed`, `gameStatus`, and `isAiThinking`.
+  </Step>
+</Steps>
+
+<Note>
+  Countries are fetched exactly once when the app first mounts and stored in the `allCountries` state variable. Every subsequent restart reuses this in-memory list, so there are no extra API calls during a session.
+</Note>
+
+## `useGame()` return value
+
+Everything `GameBoard` needs comes from a single hook call:
+
+```js
+const {
+  secretCountry,       // the hidden country object
+  messages,            // array of { role: "user"|"ai", text: string }
+  questionsUsed,       // number of questions asked so far
+  questionsRemaining,  // MAX_QUESTIONS - questionsUsed
+  maxQuestions,        // 20
+  gameStatus,          // "loading" | "playing" | "won" | "lost"
+  isAiThinking,        // boolean — AI is generating a response
+  error,               // string | null
+  askQuestion,         // (questionText: string) => Promise<void>
+  submitGuess,         // (guessText: string) => Promise<void>
+  restartGame,         // () => void
+} = useGame();
+```

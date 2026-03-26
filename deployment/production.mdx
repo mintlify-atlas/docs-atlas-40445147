@@ -1,0 +1,108 @@
+---
+title: "Production deployment"
+description: "How to build and deploy GeoQuest to production."
+---
+
+GeoQuest is a Next.js 14 App Router application. It can be deployed anywhere that supports Node.js 18+ and Next.js — but Vercel is the simplest path.
+
+<Warning>
+  The `NOVITA_API_KEY` environment variable **must** be configured on your deployment platform. If it is missing, the AI game host will fail to respond and players will see errors when asking questions.
+</Warning>
+
+## Build for production
+
+<Steps>
+  <Step title="Configure your environment">
+    Ensure your `.env.local` file exists at the project root and contains a valid `NOVITA_API_KEY`:
+
+    ```bash
+    NOVITA_API_KEY=nv-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    ```
+
+    See [Environment variables](/deployment/environment-variables) for how to create this file.
+  </Step>
+
+  <Step title="Run the production build">
+    ```bash
+    npm run build
+    ```
+
+    Next.js compiles your application, optimizes assets, and generates static pages where possible. The output goes to the `.next/` directory.
+  </Step>
+
+  <Step title="Start the production server">
+    ```bash
+    npm start
+    ```
+
+    This serves the compiled output using the Next.js production server.
+  </Step>
+
+  <Step title="Open the app">
+    The app runs on port **3000** by default. Open [http://localhost:3000](http://localhost:3000) to verify the deployment.
+  </Step>
+</Steps>
+
+## Deploy to Vercel
+
+Vercel is the natural deployment target for Next.js — it was built by the same team. It requires zero configuration for Next.js projects.
+
+<Steps>
+  <Step title="Push your code to GitHub">
+    Make sure your project is in a GitHub repository. Vercel pulls directly from GitHub on every push.
+
+    ```bash
+    git add .
+    git commit -m "feat: ready for production"
+    git push origin main
+    ```
+  </Step>
+
+  <Step title="Import your repository on Vercel">
+    Go to [vercel.com](https://vercel.com), sign in, and click **Add New Project**. Select your GitHub repository from the list and click **Import**.
+  </Step>
+
+  <Step title="Add the environment variable">
+    Before deploying, expand the **Environment Variables** section in the Vercel dashboard and add:
+
+    | Name | Value |
+    | --- | --- |
+    | `NOVITA_API_KEY` | Your novita.ai API key |
+
+    This replaces the `.env.local` file you use locally — you do not upload that file to Vercel.
+  </Step>
+
+  <Step title="Deploy">
+    Click **Deploy**. Vercel runs `npm run build` automatically and publishes the result to a global CDN. Your app is live within a couple of minutes.
+  </Step>
+</Steps>
+
+<Tip>
+  Vercel's Hobby plan is free for personal projects. It automatically handles Next.js API routes (like `/api/ask`) as serverless functions — no extra configuration needed.
+</Tip>
+
+## Deploy to other platforms
+
+Any platform that supports **Node.js 18+** and Next.js works: Railway, Render, Fly.io, and others. The process is the same in principle:
+
+1. Push your code to a repository.
+2. Connect the repository to the platform.
+3. Set the `NOVITA_API_KEY` environment variable in that platform's dashboard or secrets manager.
+4. Trigger a build — the platform runs `npm run build` and `npm start`.
+
+Refer to each platform's documentation for the exact steps. The critical requirement is that environment variables are set before the build runs.
+
+## Available npm scripts
+
+<Note>
+  GeoQuest defines four npm scripts in `package.json`:
+
+  | Script | Command | Description |
+  | --- | --- | --- |
+  | Development server | `npm run dev` | Starts Next.js with hot reload at localhost:3000 |
+  | Production build | `npm run build` | Compiles and optimizes the app for production |
+  | Production server | `npm start` | Serves the compiled production build |
+  | Lint | `npm run lint` | Runs ESLint using the Next.js ruleset |
+</Note>
+
+GeoQuest uses **Next.js 14** with the **App Router**. Pages live under `app/`, and the AI proxy is implemented as a Next.js API route at `app/api/ask/route.js`.

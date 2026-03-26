@@ -1,0 +1,112 @@
+---
+title: "Countries API"
+description: "How GeoQuest loads and uses country data from the REST Countries API."
+---
+
+GeoQuest sources all of its country data from the [REST Countries API](https://restcountries.com) — a free, open API that returns structured information about every country in the world. No API key or authentication is required.
+
+## API request
+
+The app fetches only the fields it actually uses, keeping the payload small:
+
+```
+https://restcountries.com/v3.1/all?fields=name,capital,currencies,flags,latlng,region,subregion
+```
+
+This single request returns an array of ~250 country objects. It is made once in the `useEffect` inside `useGame.js` when the app first mounts.
+
+<Note>
+  The full country list is stored in the `allCountries` state variable after the first fetch. Subsequent game restarts pick a new random country directly from this in-memory array — no additional API calls are made during a session.
+</Note>
+
+## Country object shape
+
+Each item in the response array has the following structure. These are the exact fields the app reads:
+
+```js
+{
+  name: {
+    common: "France",           // used for display and guess checking
+    official: "French Republic" // also checked when the player guesses
+  },
+  capital: ["Paris"],           // first element used
+  currencies: {
+    EUR: { name: "Euro", symbol: "€" }
+  },
+  flags: {
+    png: "https://...",         // used in CountryCard
+    svg: "https://..."
+  },
+  latlng: [46, 2],              // [latitude, longitude]
+  region: "Europe",
+  subregion: "Western Europe"
+}
+```
+
+## Utility functions
+
+All country-related logic lives in `utils/countryUtils.js`, keeping components and hooks free of data-wrangling code.
+
+### `getRandomCountry(countries)`
+
+Picks a uniformly random country from the array using `Math.random()`. Returns `null` if the array is empty or falsy, so the calling code can handle a failed fetch gracefully.
+
+```js
+export function getRandomCountry(countries) {
+  if (!countries || countries.length === 0) return null;
+  const randomIndex = Math.floor(Math.random() * countries.length);
+  return countries[randomIndex];
+}
+```
+
+### `getCurrencyDisplay(currencies)`
+
+Formats the `currencies` object into a human-readable string like `"Euro (EUR)"`. Handles missing or malformed data by returning `"Unknown"`.
+
+```js
+export function getCurrencyDisplay(currencies) {
+  if (!currencies) return "Unknown";
+  const code = Object.keys(currencies)[0];
+  if (!code) return "Unknown";
+  return `${currencies[code].name} (${code})`;
+}
+```
+
+Example output:
+
+| Input | Output |
+|---|---|
+| `{ EUR: { name: "Euro", symbol: "€" } }` | `"Euro (EUR)"` |
+| `{ USD: { name: "United States Dollar", symbol: "$" } }` | `"United States Dollar (USD)"` |
+| `null` | `"Unknown"` |
+
+### `normalizeGuess(text)`
+
+Strips leading/trailing whitespace and converts to lowercase so that guess comparisons are case-insensitive and whitespace-tolerant.
+
+```js
+export function normalizeGuess(text) {
+  return text?.trim().toLowerCase() ?? "";
+}
+```
+
+Examples: `"  FRANCE  "` → `"france"`, `"new zealand"` → `"new zealand"`
+
+### `checkGuess(guess, country)`
+
+The authoritative comparison function. It normalizes the player's raw input and checks it against both `name.common` and `name.official` so that answers like `"United States"` and `"United States of America"` are both accepted.
+
+```js
+export function checkGuess(guess, country) {
+  if (!guess || !country) return false;
+
+  const normalized   = normalizeGuess(guess);
+  const commonName   = normalizeGuess(country?.name?.common);
+  const officialName = normalizeGuess(country?.name?.official);
+
+  // Check against both common and official names
+  return normalized === commonName || normalized === officialName;
+}
+```
+
+This function is called directly in `submitGuess()` inside `useGame.js` and does not involve a network request — the verdict is instant.

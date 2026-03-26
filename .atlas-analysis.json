@@ -1,0 +1,57 @@
+{
+  "projectType": "frontend",
+  "projectName": "GeoQuest",
+  "projectDescription": "An AI-powered geography guessing game built with Next.js and React where players ask up to 20 yes/no questions to identify a randomly selected mystery country.",
+  "theme": "almond",
+  "primaryColor": "#040404",
+  "lightColor": "#24d47c",
+  "darkColor": "#5b51ec",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "configuration"]
+          },
+          {
+            "group": "How It Works",
+            "pages": ["how-it-works/game-flow", "how-it-works/ai-integration", "how-it-works/countries-api"]
+          },
+          {
+            "group": "Architecture",
+            "pages": ["architecture/project-structure", "architecture/components", "architecture/state-management"]
+          },
+          {
+            "group": "Deployment",
+            "pages": ["deployment/production", "deployment/environment-variables"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-powered game host using novita.ai (LLaMA 3.1 8B) that answers geography questions without revealing the secret country",
+    "250+ countries sourced from the REST Countries API with automatic random selection each game",
+    "20-question limit with visual progress bar that turns red when fewer than 5 questions remain",
+    "Chat-style UI with user and AI messages displayed like a messaging app",
+    "Country reveal card at game end showing flag, capital, region, currency, and coordinates",
+    "Server-side API proxy route to keep the novita.ai API key secure",
+    "Custom useGame React hook that separates all game logic from UI rendering",
+    "Responsive design built entirely with TailwindCSS — works on mobile and desktop"
+  ],
+  "publicApiSurface": [
+    "useGame() — custom hook returning { secretCountry, messages, questionsUsed, questionsRemaining, maxQuestions, gameStatus, isAiThinking, error, askQuestion, submitGuess, restartGame }",
+    "askQuestion(questionText: string) — sends a natural-language question to the AI and appends the response to chat history",
+    "submitGuess(guessText: string) — checks the player's country guess and updates game status to 'won' or 'lost'",
+    "restartGame() — resets all game state and picks a new random country",
+    "POST /api/ask — server-side route that proxies { question, country, history } to novita.ai and returns { answer }",
+    "askAI(userQuestion: string, country: object, chatHistory: Array) — calls novita.ai chat completions API",
+    "buildSystemPrompt(country: object) — constructs the AI system prompt with country facts and game rules",
+    "getRandomCountry(countries: Array) — returns a random country object from the array",
+    "checkGuess(guess: string, country: object) — compares user guess to common and official country names",
+    "getCurrencyDisplay(currencies: object) — formats currency object to 'Name (CODE)' string",
+    "normalizeGuess(text: string) — trims and lowercases text for case-insensitive comparison"
+  ]
+}

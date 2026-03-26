@@ -1,0 +1,157 @@
+---
+title: "Configuration"
+description: "Reference for all configurable constants and environment variables in GeoQuest."
+---
+
+<Note>
+  All values below are code-level constants. There is no runtime configuration file or admin UI. To change a value, edit the source file directly and restart the development server.
+</Note>
+
+## Game constants
+
+These constants are defined in `hooks/useGame.js` and control the core game rules.
+
+### `MAX_QUESTIONS`
+
+| Property | Value |
+|---|---|
+| **File** | `hooks/useGame.js` |
+| **Default** | `20` |
+| **Type** | `number` |
+
+The total number of question slots available per game. Each question asked and each incorrect guess both consume one slot. When `questionsUsed` reaches this value the game status transitions to `"lost"` and the secret country is revealed.
+
+The progress bar turns red when 5 or fewer questions remain (`questionsRemaining <= 5`).
+
+### `COUNTRIES_API`
+
+| Property | Value |
+|---|---|
+| **File** | `hooks/useGame.js` |
+| **Default** | `https://restcountries.com/v3.1/all?fields=name,capital,currencies,flags,latlng,region,subregion` |
+| **Type** | `string` |
+
+The REST Countries API endpoint used to load all available countries at game start. Only the fields needed by the game are requested to keep the payload small: `name`, `capital`, `currencies`, `flags`, `latlng`, `region`, and `subregion`.
+
+If you need additional country data (e.g., `population`, `area`, `languages`), add the field name to the `fields` query parameter and update `buildSystemPrompt` in `services/aiService.js` to reference it.
+
+## AI constants
+
+These constants are defined in `services/aiService.js` and control how GeoQuest communicates with the novita.ai API.
+
+### `MODEL`
+
+| Property | Value |
+|---|---|
+| **File** | `services/aiService.js` |
+| **Default** | `meta-llama/llama-3.1-8b-instruct` |
+| **Type** | `string` |
+
+The novita.ai model identifier used for all chat completions. LLaMA 3.1 8B is selected for its speed and low cost, which suits a real-time game where every question needs a fast response.
+
+To use a different model, replace the value with any model ID supported by the novita.ai OpenAI-compatible endpoint.
+
+### `max_tokens`
+
+| Property | Value |
+|---|---|
+| **File** | `services/aiService.js` |
+| **Default** | `200` |
+| **Type** | `number` |
+
+The maximum number of tokens the AI is allowed to generate in a single response. Keeping this low ensures answers are short and snappy — appropriate for a game UI — and reduces API costs.
+
+If the AI is cutting off mid-sentence on longer answers, increase this value. If you want strictly one-line responses, lower it to around `60`–`80`.
+
+### `temperature`
+
+| Property | Value |
+|---|---|
+| **File** | `services/aiService.js` |
+| **Default** | `0.7` |
+| **Type** | `number` (0.0 – 2.0) |
+
+Controls the randomness of AI responses. A value of `0.7` produces answers that feel natural and varied without becoming erratic.
+
+<Warning>
+  Increasing `temperature` above `1.0` makes responses more creative and unpredictable — the AI may start giving inconsistent or misleading hints. Decreasing it toward `0.0` produces very consistent but sometimes repetitive answers. For a guessing game, the range `0.5`–`0.8` gives the best balance.
+</Warning>
+
+### `chatHistory.slice(-10)`
+
+| Property | Value |
+|---|---|
+| **File** | `services/aiService.js` |
+| **Default** | `10` (last 10 messages) |
+| **Type** | `number` |
+
+Only the most recent 10 messages from the chat history are sent to the AI on each request. This limits the token count of each API call and keeps costs predictable across a full 20-question game.
+
+To give the AI more context (at the cost of more tokens per request), increase the slice argument. To save tokens, decrease it — though values below `4`–`6` may cause the AI to lose track of what it has already answered.
+
+## Offline mock AI
+
+The repository ships a second service file, `services/mockAiService.js`, that replaces the novita.ai API with local rule-based logic. It detects keywords in the player's question (continent, hemisphere, currency, capital, flag, island, climate, etc.) and returns deterministic answers computed directly from the country's data — **no API key required**.
+
+### `getMockAnswer(question, country)`
+
+```js
+import { getMockAnswer } from "@/services/mockAiService";
+
+// Returns a string answer based on keyword detection
+const answer = getMockAnswer("Is it in Europe?", secretCountry);
+```
+
+The mock service is useful for:
+- **Local development** when you don't have a novita.ai key yet
+- **Testing** game logic without consuming API quota
+- **Offline environments** with no internet access
+
+To use it, replace the `askAI` call in `app/api/ask/route.js` with `getMockAnswer`:
+
+```js
+// app/api/ask/route.js — swap in the mock for local testing
+import { getMockAnswer } from "@/services/mockAiService";
+
+export async function POST(request) {
+  const { question, country } = await request.json();
+  const answer = getMockAnswer(question, country);  // no await needed
+  return NextResponse.json({ answer });
+}
+```
+
+<Note>
+  The mock service responds in Spanish for some question categories (it was built for a bilingual classroom setting). For English-only deployments, swap it back to `aiService.js` before going to production.
+</Note>
+
+## Environment variables
+
+Environment variables are read at runtime by the Next.js server. They must be present in `.env.local` before starting the development server or deploying.
+
+### `NOVITA_API_KEY`
+
+| Property | Value |
+|---|---|
+| **Required** | Yes |
+| **File** | `.env.local` |
+| **Used in** | `app/api/ask/route.js` via `process.env.NOVITA_API_KEY` |
+
+Your secret API key for the novita.ai service. It is read exclusively on the server inside the `/api/ask` route handler and is never sent to the browser.
+
+To set it up:
+
+```bash
+cp .env.example.api .env.local
+```
+
+Then edit `.env.local`:
+
+```bash
+NOVITA_API_KEY=your_actual_novita_api_key_here
+```
+
+<Warning>
+  Never commit `.env.local` to version control. Exposing this key publicly allows anyone to make API calls billed to your novita.ai account. The `.gitignore` in this repository excludes `.env.local` by default.
+</Warning>
+
+Get a free API key at [novita.ai](https://novita.ai/) under **Dashboard → API Keys → Create Key**.

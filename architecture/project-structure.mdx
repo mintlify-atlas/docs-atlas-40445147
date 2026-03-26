@@ -1,0 +1,161 @@
+---
+title: 'Project structure'
+description: 'A guided tour of the GeoQuest codebase layout and how the pieces fit together.'
+---
+
+GeoQuest follows the Next.js 14 App Router conventions. Every directory has a single, well-defined responsibility — game logic never leaks into UI components, and API keys never reach the browser.
+
+## Directory tree
+
+```bash
+actividad_app_react/
+├── app/                    # Next.js App Router pages
+│   ├── layout.jsx          # Root layout — Header + Footer on every page
+│   ├── page.jsx            # Home page (/)
+│   ├── globals.css         # Global styles (Tailwind directives only)
+│   ├── game/
+│   │   └── page.jsx        # Game page (/game)
+│   └── api/
+│       └── ask/
+│           └── route.js    # API route — secure proxy to novita.ai
+├── components/             # Reusable UI components
+├── hooks/
+│   └── useGame.js          # Custom hook — ALL game state & logic
+├── services/
+│   └── aiService.js        # novita.ai API client & prompt builder
+└── utils/
+    └── countryUtils.js     # Helper functions for country data
+```
+
+## Directory breakdown
+
+<AccordionGroup>
+  <Accordion title="app/ — Next.js App Router pages">
+    The `app/` directory is the entry point for every route in the application.
+    Next.js uses the file system as the router: a file at `app/game/page.jsx`
+    automatically maps to the URL `/game`.
+
+    | File | Route | Purpose |
+    |---|---|---|
+    | `layout.jsx` | All routes | Root layout — wraps every page with `<Header>` and `<Footer>`. Exports `metadata` for `<title>` and `<meta description>`. |
+    | `page.jsx` | `/` | Home page — hero section, how-it-works steps, team members, CTA link to `/game`. |
+    | `globals.css` | — | Tailwind `@base`, `@components`, and `@utilities` directives only. No custom CSS here. |
+    | `game/page.jsx` | `/game` | Game page — renders the static shell (title, quick rules) and mounts `<GameBoard>`. |
+    | `api/ask/route.js` | `POST /api/ask` | Server-side API route that proxies requests to novita.ai. The API key is read from environment variables here and never sent to the browser. |
+  </Accordion>
+
+  <Accordion title="components/ — Reusable UI components">
+    All React components live here. Each file exports a single default component.
+    Components are pure presentational units — they receive props (or call `useGame()`)
+    and return JSX. They contain no direct API calls or business logic.
+
+    See the [Components](/architecture/components) reference for full documentation
+    of every component and its props.
+  </Accordion>
+
+  <Accordion title="hooks/ — Custom React hooks">
+    `useGame.js` is the single source of truth for all game state. It owns:
+
+    - Loading countries from the REST Countries API
+    - Picking a random secret country
+    - Managing the chat message history
+    - Calling `/api/ask` when the player asks a question
+    - Evaluating guesses and transitioning game status
+
+    No component other than `GameBoard` needs to import this hook directly.
+  </Accordion>
+
+  <Accordion title="services/ — External API clients">
+    `aiService.js` is the isolated novita.ai client. It constructs the system
+    prompt that instructs the AI to act as a geography game host, formats the
+    conversation history, and makes the actual HTTP request to the novita.ai
+    inference endpoint.
+
+    Isolating it here means the prompt and model configuration can be changed
+    without touching any component or hook.
+  </Accordion>
+
+  <Accordion title="utils/ — Pure utility functions">
+    `countryUtils.js` exports stateless helper functions with no side effects:
+
+    - `getRandomCountry(countries)` — picks a random entry from an array
+    - `checkGuess(guess, country)` — normalizes and compares a guess string against the secret country name
+    - `getCurrencyDisplay(currencies)` — formats the REST Countries API currency object into a readable string like `"Euro (EUR)"`
+
+    Because these functions are pure, they are straightforward to unit-test in
+    isolation.
+  </Accordion>
+</AccordionGroup>
+
+## Separation of concerns
+
+Each layer of the application has exactly one job:
+
+<Steps>
+  <Step title="utils/countryUtils.js — pure data helpers">
+    Stateless functions that transform data. No React, no fetch calls, no side
+    effects. These can be imported anywhere and tested without a browser.
+  </Step>
+  <Step title="services/aiService.js — AI API client">
+    Knows how to talk to novita.ai: which model to use, how to format the system
+    prompt, and how to parse the response. Nothing in this file knows what a
+    React component is.
+  </Step>
+  <Step title="app/api/ask/route.js — server-side proxy">
+    Runs exclusively on the server. Reads `NOVITA_API_KEY` from environment
+    variables, calls `aiService.js`, and returns the answer. The API key is
+    never bundled into client-side JavaScript.
+  </Step>
+  <Step title="hooks/useGame.js — game state and business logic">
+    The single source of truth. Manages all `useState` variables, orchestrates
+    `fetch` calls to `/api/ask`, and exposes a clean interface of state and
+    callbacks to the UI layer.
+  </Step>
+  <Step title="components/GameBoard.jsx — UI orchestration">
+    Calls `useGame()` and maps state to JSX. Decides what to render based on
+    `gameStatus` (`loading`, `playing`, `won`, `lost`). Contains no business
+    logic of its own.
+  </Step>
+</Steps>
+
+## Next.js App Router concepts
+
+### Server components vs. client components
+
+Next.js 14 defaults every component in `app/` to a **Server Component** — it
+renders on the server and ships zero JavaScript to the browser.
+
+Components that need interactivity opt in to the browser runtime with the
+`"use client"` directive at the top of the file.
+
+| File | Type | Why |
+|---|---|---|
+| `app/layout.jsx` | Server Component | No interactivity — just wraps children with static markup. |
+| `app/page.jsx` | Server Component | Static content only: hero, steps, team list. |
+| `app/game/page.jsx` | Server Component | Shell layout is static; `<GameBoard>` inside it is the client boundary. |
+| `components/Header.jsx` | Client Component | Uses `usePathname()` — a React hook that requires the browser runtime. |
+| `components/GameBoard.jsx` | Client Component | Uses `useGame()` hook, handles user events. |
+| `hooks/useGame.js` | Client only | Uses `useState`, `useEffect`, `useCallback` — all browser-only. |
+
+### API routes
+
+Files named `route.js` (or `route.ts`) inside `app/api/` become HTTP endpoints.
+They run only on the server — they are never bundled into the client JavaScript.
+This is what makes it safe to access `process.env.NOVITA_API_KEY` inside
+`app/api/ask/route.js`.
+
+<Note>
+  GeoQuest uses the `@/` path alias throughout the codebase, configured in
+  `jsconfig.json`. `@/` maps to the project root, so `@/hooks/useGame` resolves
+  to `actividad_app_react/hooks/useGame.js` regardless of where the importing
+  file lives. This avoids long relative paths like `../../hooks/useGame`.
+</Note>
+
+### Configuration files
+
+| File | Purpose |
+|---|---|
+| `next.config.js` | Configures Next.js. Declares allowed image domains (`flagcdn.com`, `upload.wikimedia.org`) for the Next.js `<Image>` optimizer. |
+| `tailwind.config.js` | Tailwind content paths — tells Tailwind which files to scan for class names so unused styles are purged in production. |
+| `postcss.config.js` | Required by TailwindCSS. Enables the `tailwindcss` and `autoprefixer` PostCSS plugins. |
+| `jsconfig.json` | Configures the `@/` import alias for the JavaScript toolchain and editor IntelliSense. |

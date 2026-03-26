@@ -1,0 +1,123 @@
+---
+title: "AI integration"
+description: "How novita.ai and LLaMA 3.1 8B power the GeoQuest game host."
+---
+
+GeoQuest uses [novita.ai](https://novita.ai) to run an LLM-powered game host. The model answers the player's geography questions while keeping the secret country hidden — and the API key stays safe on the server at all times.
+
+## Server-side proxy pattern
+
+The browser **never** calls novita.ai directly. Every AI interaction is routed through a Next.js API route that acts as a secure proxy:
+
+```
+Browser
+  └─ POST /api/ask  { question, country, history }
+       └─ app/api/ask/route.js  (server-side)
+            └─ askAI()  from services/aiService.js
+                 └─ POST https://api.novita.ai/v3/openai/chat/completions
+                      └─ { answer: string }  ← returned to browser
+```
+
+The `NOVITA_API_KEY` environment variable only exists in the Node.js server process. It is never bundled into the client and never visible in browser DevTools.
+
+## Request and response flow
+
+### 1. Browser → `/api/ask`
+
+When the player submits a question, `useGame.js` POSTs:
+
+```js
+fetch("/api/ask", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    question: questionText,   // the player's question
+    country: secretCountry,   // full country object (sent to server only)
+    history: historyForAI,    // previous turns in OpenAI message format
+  }),
+});
+```
+
+### 2. API route → `askAI()`
+
+`app/api/ask/route.js` validates the body, then delegates to the AI service:
+
+```js
+const answer = await askAI(question, country, history);
+return NextResponse.json({ answer });
+```
+
+### 3. `aiService.js` → novita.ai
+
+`askAI()` builds the messages array and calls the novita.ai chat completions endpoint using an OpenAI-compatible format:
+
+```js
+fetch("https://api.novita.ai/v3/openai/chat/completions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${process.env.NOVITA_API_KEY}`,
+  },
+  body: JSON.stringify({
+    model: "meta-llama/llama-3.1-8b-instruct",
+    messages,
+    max_tokens: 200,
+    temperature: 0.7,
+  }),
+});
+```
+
+## Messages array sent to novita.ai
+
+The AI receives the full conversation context on every call. Up to the last 10 messages from the chat history are included to stay within a reasonable token budget:
+
+```js
+[
+  { role: "system", content: systemPrompt },
+  // last 10 messages from chat history
+  { role: "user",      content: "Is it in Europe?" },
+  { role: "assistant", content: "Yes, it is in Europe!" },
+  // ...
+  { role: "user", content: userQuestion }
+]
+```
+
+Chat messages from `useGame` use `"user"` and `"ai"` roles internally, but they are remapped to `"user"` and `"assistant"` before being sent to novita.ai to match the OpenAI API format.
+
+## System prompt
+
+The system prompt is built by `buildSystemPrompt(country)` in `aiService.js`. It gives the model its identity, all the country facts it needs to answer questions, and strict behavioral rules:
+
+```
+You are a fun and friendly game host for a geography guessing game
+called "Guess the Country in 20 Questions".
+
+The secret country is: {name}
+
+Country facts you can use to give hints:
+- Capital city: {capital}
+- Region: {region}
+- Subregion: {subregion}
+- Currency: {currencyName} ({currencyCode})
+- Location: {hemisphere}, approximately {lat}°N/S, {lng}°E/W
+
+YOUR RULES:
+1. NEVER directly say the country name unless the player guesses it correctly.
+2. Answer questions with YES, NO, or a short helpful hint.
+3. Be encouraging and fun — this is a game!
+4. If the player guesses WRONG, say "No, that's not it! Keep trying."
+5. If the player guesses CORRECTLY, say "🎉 YES! You got it! The country is {name}!"
+6. Keep all answers under 2 sentences.
+7. If asked about the flag, describe colors/symbols without naming the country.
+8. If asked yes/no questions, answer them clearly.
+```
+
+The country name, capital, region, currency, and coordinates are injected at runtime — every game session gets a freshly generated prompt for the secret country.
+
+<Tip>
+  `max_tokens: 200` caps the length of each AI response, keeping answers snappy and preventing the model from accidentally rambling in a way that might reveal the country. `temperature: 0.7` strikes a balance between predictable YES/NO answers and enough variation to make the host feel natural and encouraging rather than robotic.
+</Tip>
+
+<Warning>
+  The novita.ai free tier has rate limits on requests per minute and per day. If you hit these limits during development, the `/api/ask` route will return a 500 error and `useGame` will surface it as an `error` string in the UI. Monitor your usage in the novita.ai dashboard and consider adding retry logic or user-facing rate-limit messaging for production deployments.
+</Warning>

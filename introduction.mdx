@@ -1,0 +1,56 @@
+---
+title: "Introduction"
+description: "GeoQuest is an AI-powered geography guessing game where you identify a mystery country through up to 20 questions answered by an AI game host."
+---
+
+GeoQuest picks one country at random from a pool of 250+ countries and challenges you to identify it before your questions run out. Each question you ask is answered by an AI game host powered by novita.ai — it knows everything about the secret country but will never say its name outright.
+
+<Note>
+  GeoQuest is an educational project built to demonstrate core React concepts including custom hooks, state management, API integration, and server-side proxying in a Next.js application.
+</Note>
+
+## How it works
+
+1. On load, the app fetches every country from the **REST Countries API** and randomly selects one as the secret target.
+2. The AI game host receives the full country data in its system prompt — capital, region, currency, coordinates — but is instructed never to reveal the country name.
+3. You ask questions in natural language. Yes/no questions work best: "Is it in Europe?", "Does it border the ocean?", "Is its capital city on an island?"
+4. At any point you can switch to guess mode and submit a country name. A correct guess wins the game; an incorrect one costs one question slot.
+5. The game ends when you guess correctly or exhaust all 20 questions. Either way, the full country card is revealed.
+
+## Key features
+
+- **AI-powered game host** — Uses novita.ai with the LLaMA 3.1 8B model. Answers questions with yes, no, or a short descriptive hint. Never reveals the country name unless you guess it correctly.
+- **250+ countries** — The full country list is loaded live from the REST Countries API on every game start, including name, capital, currencies, flag, coordinates, region, and subregion.
+- **20-question limit with visual feedback** — A progress bar tracks questions used. It turns red when 5 or fewer questions remain, adding urgency.
+- **Chat-style UI** — Your questions appear on the right; AI answers appear on the left, styled like a messaging app. New messages animate in with a fade-up transition.
+- **Country reveal card** — At game end, a card displays the secret country's flag, capital, currency, region, and coordinates regardless of whether you won or lost.
+- **Server-side API proxy** — Questions are routed through a Next.js API route (`/api/ask`) so the `NOVITA_API_KEY` is never exposed to the browser.
+- **Custom `useGame` hook** — All game state and logic lives in `hooks/useGame.js`, keeping the UI components focused purely on rendering.
+- **Fully responsive** — Built with TailwindCSS only. No custom CSS files, no external UI libraries. Works on mobile and desktop.
+
+## Tech stack
+
+| Technology | Version | Role |
+|---|---|---|
+| Next.js | 14 | Framework, App Router, API routes |
+| React | 18 | UI, hooks, state management |
+| TailwindCSS | 3.3 | Styling |
+| REST Countries API | v3.1 | Country data source |
+| novita.ai (LLaMA 3.1 8B) | — | AI game host |
+
+## Explore the docs
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Clone the repo, add your API key, and have the game running locally in minutes.
+  </Card>
+  <Card title="Game flow" icon="gamepad" href="/how-it-works/game-flow">
+    Understand the full lifecycle of a game round from country selection to reveal.
+  </Card>
+  <Card title="Components" icon="puzzle-piece" href="/architecture/components">
+    Browse the UI component tree and learn what each component is responsible for.
+  </Card>
+  <Card title="State management" icon="database" href="/architecture/state-management">
+    Deep-dive into the `useGame` hook and how game state flows through the app.
+  </Card>
+</CardGroup>

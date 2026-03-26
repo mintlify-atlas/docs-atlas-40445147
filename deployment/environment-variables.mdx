@@ -1,0 +1,74 @@
+---
+title: "Environment variables"
+description: "All environment variables required to run GeoQuest."
+---
+
+GeoQuest uses a **single required environment variable**. There are no optional variables and no third-party service keys beyond novita.ai.
+
+## Required variables
+
+<ParamField path="NOVITA_API_KEY" type="string" required>
+  Your novita.ai API key. Used server-side only to authenticate requests to the novita.ai chat completions API (LLaMA 3.1 8B).
+
+  **Example:**
+  ```bash
+  NOVITA_API_KEY=nv-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  ```
+
+  **Where to get it:**
+  1. Sign up at [novita.ai](https://novita.ai)
+  2. Go to **Dashboard → API Keys → Create Key**
+  3. Copy the generated key and paste it into your `.env.local` file
+</ParamField>
+
+## The `.env.local` file
+
+Next.js loads environment variables from a `.env.local` file at the project root during development and local production builds.
+
+**Create the file from the provided template:**
+
+```bash
+cp .env.example.api .env.local
+```
+
+Then open `.env.local` and replace the placeholder with your actual key:
+
+```bash
+# .env.local
+NOVITA_API_KEY=nv-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+| Property | Detail |
+| --- | --- |
+| Location | Project root (same level as `package.json`) |
+| Template | `.env.example.api` |
+| Committed to git | No — already listed in `.gitignore` |
+| Required in production | No — set the variable in your platform's dashboard instead |
+
+## How Next.js handles environment variables
+
+Next.js has strict rules about which variables are available where:
+
+- Variables in `.env.local` are **server-side only** by default. They are available in API routes (`app/api/`) and server components, but never sent to the browser.
+- To expose a variable to the browser, it must be prefixed with `NEXT_PUBLIC_` (e.g., `NEXT_PUBLIC_SITE_NAME`). This makes the value part of the JavaScript bundle that every visitor downloads.
+
+`NOVITA_API_KEY` must **not** be prefixed with `NEXT_PUBLIC_`. The entire reason GeoQuest proxies AI requests through `app/api/ask/route.js` is to keep the key on the server.
+
+<Warning>
+  Never rename the variable to `NEXT_PUBLIC_NOVITA_API_KEY`. Doing so would embed your API key in the browser bundle, making it visible to anyone who opens DevTools or views the page source. They could then use your key to make unlimited requests at your expense.
+</Warning>
+
+## Setting variables in production
+
+<Tip>
+  On Vercel and most other platforms, you set environment variables in the project dashboard — you do **not** need a `.env.local` file in production. The platform injects the variables into the build and runtime environment automatically.
+</Tip>
+
+For platforms that use a CLI or config file, refer to their documentation:
+
+| Platform | Where to set variables |
+| --- | --- |
+| Vercel | Project → Settings → Environment Variables |
+| Railway | Project → Variables tab |
+| Render | Service → Environment tab |
+| Fly.io | `fly secrets set NOVITA_API_KEY=...` |

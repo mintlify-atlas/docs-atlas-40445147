@@ -1,0 +1,296 @@
+---
+title: 'State management'
+description: 'How the useGame custom hook manages all game state and logic in GeoQuest.'
+---
+
+GeoQuest uses a single custom hook, `useGame`, to manage every piece of game
+state. No external state library (Redux, Zustand, Jotai) is needed — the game
+has one active session and one player, so React's built-in hooks are the right
+tool.
+
+## Why a custom hook?
+
+The hook pattern enforces a strict boundary between **business logic** and **UI**:
+
+- `useGame()` knows **how** the game works — loading data, calling the AI,
+  evaluating guesses, tracking questions.
+- `GameBoard` knows **what** to show — it reads values from the hook and passes
+  callbacks to child components.
+
+Neither layer needs to understand the other's internals. If you change the
+game rules (e.g., increase to 25 questions), you edit `useGame.js` only. If
+you redesign the layout, you edit `GameBoard.jsx` only.
+
+<Tip>
+  Because all business logic lives in a plain JavaScript function, `useGame`
+  can be tested entirely without rendering any React component. You can call
+  the hook in a test environment, invoke `askQuestion` or `submitGuess`, and
+  assert on the returned state — no DOM required.
+</Tip>
+
+## State variables
+
+All state is declared at the top of `useGame.js` with `useState`:
+
+```js
+// hooks/useGame.js
+const [secretCountry, setSecretCountry] = useState(null);
+const [allCountries, setAllCountries]   = useState([]);
+const [messages, setMessages]           = useState([]);
+const [questionsUsed, setQuestionsUsed] = useState(0);
+const [gameStatus, setGameStatus]       = useState('loading');
+const [isAiThinking, setIsAiThinking]   = useState(false);
+const [error, setError]                 = useState(null);
+```
+
+| Variable | Type | Description |
+|---|---|---|
+| `secretCountry` | `object \| null` | The hidden country object from the REST Countries API. Never shown to the player during an active game. |
+| `allCountries` | `object[]` | The complete list of countries fetched on mount. Cached so that `restartGame()` can pick a new random country without a second network request. |
+| `messages` | `Array<{ role: "user" \| "ai", text: string }>` | The full chat history. The first entry is always the AI's opening message. |
+| `questionsUsed` | `number` | Count of questions asked so far, including wrong guesses. Starts at `0`, maximum is `20`. |
+| `gameStatus` | `"loading" \| "playing" \| "won" \| "lost"` | The current phase of the game. Components branch on this value to decide what to render. |
+| `isAiThinking` | `boolean` | `true` while waiting for a response from `/api/ask`. Used to disable inputs and show the typing indicator in `ChatBox`. |
+| `error` | `string \| null` | The last error message, or `null` when everything is healthy. Cleared at the start of each new request. |
+
+## Computed values
+
+Two values are derived at return time rather than stored in state:
+
+```js
+const MAX_QUESTIONS = 20;
+
+return {
+  questionsRemaining: MAX_QUESTIONS - questionsUsed,
+  maxQuestions: MAX_QUESTIONS,
+  // ...
+};
+```
+
+`questionsRemaining` is always accurate because it is recalculated on every
+render from the current `questionsUsed` value. Storing it separately in state
+would risk it going out of sync.
+
+## Data flow: fetching countries
+
+A `useEffect` with an empty dependency array (`[]`) runs once when `GameBoard`
+first mounts. It fetches only the fields GeoQuest needs from the REST Countries
+API:
+
+```js
+const COUNTRIES_API =
+  'https://restcountries.com/v3.1/all?fields=name,capital,currencies,flags,latlng,region,subregion';
+
+useEffect(() => {
+  async function loadCountries() {
+    try {
+      setGameStatus('loading');
+      const res = await fetch(COUNTRIES_API);
+      if (!res.ok) throw new Error('Could not load countries. Try refreshing.');
+
+      const data = await res.json();
+      setAllCountries(data);          // cache for restarts
+
+      const chosen = getRandomCountry(data);
+      startNewGame(chosen);           // start immediately
+    } catch (err) {
+      setError(err.message);
+      setGameStatus('loading');       // stays on loading so ErrorMessage shows
+    }
+  }
+
+  loadCountries();
+}, []);
+```
+
+The fetched list is stored in `allCountries` so that `restartGame()` can call
+`getRandomCountry(allCountries)` instantly — no second fetch needed.
+
+## Functions
+
+### startNewGame(country?)
+
+A `useCallback` that resets all state for a fresh game. Called internally by
+the `useEffect` on first load, and by `restartGame()` on subsequent plays.
+
+```js
+const startNewGame = useCallback(
+  (country = null) => {
+    const newCountry = country ?? getRandomCountry(allCountries);
+
+    setSecretCountry(newCountry);
+    setMessages([{
+      role: 'ai',
+      text: '🌍 I\'m thinking of a country... You have 20 questions to find out which one!',
+    }]);
+    setQuestionsUsed(0);
+    setGameStatus('playing');
+    setIsAiThinking(false);
+    setError(null);
+  },
+  [allCountries]   // re-created only when the country list changes
+);
+```
+
+The dependency on `allCountries` ensures that when `restartGame()` is called
+(which passes no argument), `getRandomCountry` receives the current cached
+list rather than a stale empty array.
+
+### askQuestion(questionText)
+
+Handles the full lifecycle of a player's question:
+
+<Steps>
+  <Step title="Guard check">
+    Returns immediately if `gameStatus !== "playing"`, `isAiThinking` is `true`,
+    or the input is blank. This prevents duplicate submissions and questions
+    after the game ends.
+  </Step>
+  <Step title="Optimistic UI update">
+    Adds the user's message to `messages`, increments `questionsUsed`, and sets
+    `isAiThinking = true` before the network request starts. The chat updates
+    immediately without waiting for the AI.
+  </Step>
+  <Step title="API call">
+    POSTs `{ question, country: secretCountry, history }` to `/api/ask`. The
+    history is formatted as `{ role: "user" | "assistant", content: string }[]`
+    to match the OpenAI-compatible format that novita.ai expects.
+  </Step>
+  <Step title="AI response">
+    Appends the AI's answer to `messages`. If `questionsUsed` has reached
+    `MAX_QUESTIONS`, sets `gameStatus = "lost"`.
+  </Step>
+  <Step title="Cleanup">
+    Sets `isAiThinking = false` in the `finally` block so inputs are re-enabled
+    even if the request fails. Any error is stored in `error`.
+  </Step>
+</Steps>
+
+```js
+const askQuestion = useCallback(
+  async (questionText) => {
+    // Guard conditions
+    if (gameStatus !== 'playing' || isAiThinking) return;
+    if (!questionText.trim()) return;
+
+    // ... (see hooks/useGame.js for full implementation)
+  },
+  [gameStatus, isAiThinking, questionsUsed, messages, secretCountry]
+);
+```
+
+<Note>
+  Both `askQuestion` and `submitGuess` check `gameStatus !== "playing" || isAiThinking`
+  before doing anything. This double guard is intentional: `isGameOver` in
+  `GameBoard` hides the inputs from the DOM when the game ends, but the guard
+  inside the hook is the authoritative safeguard — it prevents stale closures
+  or programmatic calls from corrupting state.
+</Note>
+
+### submitGuess(guessText)
+
+Evaluates the player's country guess using `checkGuess()` from
+`utils/countryUtils.js`, which normalizes both strings (lowercase, trim) before
+comparing.
+
+```js
+const submitGuess = useCallback(
+  async (guessText) => {
+    if (gameStatus !== 'playing' || isAiThinking) return;
+    if (!guessText.trim()) return;
+
+    const isCorrect = checkGuess(guessText, secretCountry);
+    const newQuestionCount = questionsUsed + 1;
+
+    // Add guess to chat as a user message
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', text: `🔍 My guess: ${guessText}` },
+    ]);
+    setQuestionsUsed(newQuestionCount);
+
+    if (isCorrect) {
+      setMessages((prev) => [...prev, { role: 'ai', text: `🎉 YES! You got it!...` }]);
+      setGameStatus('won');
+    } else {
+      // Wrong guess — feed back remaining count, check if out of questions
+      const remaining = MAX_QUESTIONS - newQuestionCount;
+      setMessages((prev) => [...prev, { role: 'ai', text: remaining > 0 ? `❌ Nope...` : `❌ Wrong guess! You've used all your questions...` }]);
+      if (newQuestionCount >= MAX_QUESTIONS) setGameStatus('lost');
+    }
+  },
+  [gameStatus, isAiThinking, questionsUsed, secretCountry]
+);
+```
+
+Note that `submitGuess` does **not** set `isAiThinking` — it evaluates the
+guess locally with `checkGuess()` and never makes an API call.
+
+### restartGame()
+
+A thin wrapper over `startNewGame()` exposed in the return value:
+
+```js
+return {
+  // ...
+  restartGame: () => startNewGame(),
+};
+```
+
+Calling it with no argument causes `startNewGame` to call
+`getRandomCountry(allCountries)` internally, picking a fresh random country
+from the already-cached list.
+
+## Return value
+
+The complete interface returned by `useGame()`:
+
+```js
+// Full return type
+{
+  // State
+  secretCountry:      object | null,
+  messages:           Array<{ role: 'user' | 'ai', text: string }>,
+  questionsUsed:      number,
+  questionsRemaining: number,      // MAX_QUESTIONS - questionsUsed
+  maxQuestions:       number,      // always 20
+  gameStatus:         'loading' | 'playing' | 'won' | 'lost',
+  isAiThinking:       boolean,
+  error:              string | null,
+
+  // Actions
+  askQuestion:  (questionText: string) => Promise<void>,
+  submitGuess:  (guessText: string)    => Promise<void>,
+  restartGame:  ()                     => void,
+}
+```
+
+## React hooks used internally
+
+| Hook | Purpose |
+|---|---|
+| `useState` | Seven independent state variables — each manages one distinct concern. |
+| `useEffect` | Fetches the country list once on mount (empty `[]` dependency array). |
+| `useCallback` | Wraps `startNewGame`, `askQuestion`, and `submitGuess` to produce stable function references across renders. |
+
+### Why useCallback matters here
+
+`useCallback` memoizes a function so that it only gets a new reference when its
+dependencies change. In `useGame`, this matters because:
+
+1. `askQuestion` and `submitGuess` are passed as props to `QuestionInput` and
+   `GuessInput`. If they were recreated on every render, child components
+   wrapped in `React.memo` would re-render unnecessarily.
+
+2. `startNewGame` is called inside the `useEffect`. Listing it as a dependency
+   without `useCallback` would create an infinite loop — the effect would run,
+   call `startNewGame`, which updates state, which triggers a re-render, which
+   recreates `startNewGame`, which triggers the effect again.
+
+The dependency arrays for each callback are kept minimal and intentional:
+
+| Callback | Dependencies | Reason |
+|---|---|---|
+| `startNewGame` | `[allCountries]` | Needs the cached country list to pick a random one when restarting. |
+| `askQuestion` | `[gameStatus, isAiThinking, questionsUsed, messages, secretCountry]` | Reads all five values inside its body. |
+| `submitGuess` | `[gameStatus, isAiThinking, questionsUsed, secretCountry]` | Does not read `messages`, so it is excluded. |

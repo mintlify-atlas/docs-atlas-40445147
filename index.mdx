@@ -1,97 +1,70 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: GeoQuest Documentation
+description: Build and run GeoQuest — an AI-powered geography guessing game where you identify mystery countries through up to 20 smart questions.
 ---
 
-## Setting up
+Welcome to the GeoQuest documentation. GeoQuest is a geography guessing game built with **Next.js 14**, **React 18**, and **TailwindCSS** that uses the **novita.ai** LLaMA 3.1 model as an AI game host. A mystery country is randomly selected from 250+ countries, and players ask yes/no questions to figure out which one it is before running out of questions.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn what GeoQuest is, how it works, and what technologies power it.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Clone the repo, install dependencies, add your API key, and start playing in minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Customize game settings, AI behavior, and app configuration options.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="How It Works" icon="circle-info" href="/how-it-works/game-flow">
+    Understand the game loop, AI integration, and the countries data pipeline.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Get up and running
 
-Everything you need to create world-class documentation.
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/andresparceromelo/actividad_app_react.git
+    cd actividad_app_react
+    ```
+  </Step>
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
+  <Step title="Add your novita.ai API key">
+    Copy the example environment file and add your key from the novita.ai dashboard.
+    ```bash
+    cp .env.example.api .env.local
+    ```
+    Edit `.env.local`:
+    ```
+    NOVITA_API_KEY=your_actual_novita_api_key_here
+    ```
+  </Step>
+  <Step title="Start the development server">
+    ```bash
+    npm run dev
+    ```
+    Open [http://localhost:3000](http://localhost:3000) to play.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Explore the docs
 
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Game flow" icon="gamepad" href="/how-it-works/game-flow">
+    Follow the full game loop from country selection to win or loss.
+  </Card>
+  <Card title="AI integration" icon="robot" href="/how-it-works/ai-integration">
+    See how novita.ai powers the game host with LLaMA 3.1 8B.
+  </Card>
+  <Card title="Components" icon="puzzle-piece" href="/architecture/components">
+    Reference for every React component and what props it accepts.
+  </Card>
+  <Card title="State management" icon="database" href="/architecture/state-management">
+    Understand the `useGame` hook that drives all game logic.
+  </Card>
+</CardGroup>
